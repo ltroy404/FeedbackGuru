@@ -63,7 +63,7 @@ def remove_api_key(update: Update, context: CallbackContext):
     user_id = update.callback_query.from_user.id
     with sqlite3.connect('users.db') as conn:
         cur = conn.cursor()
-        cur.execute(f"DELETE FROM api_keys WHERE user_id = {user_id}")
+        cur.execute(f"DELETE FROM users WHERE user_id = {user_id}")
         conn.commit()
     
     keyboard = [
