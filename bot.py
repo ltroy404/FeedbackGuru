@@ -274,7 +274,7 @@ def button_callback(update, context):
 
     except Exception as e:
         print(f"Ошибка: {str(e)}, свяжитесь с поддержкой: @ltroy_sw")
-        query.edit_message_text("Произошла ошибка, пожалуйста, свяжитесь с поддержкой: @ltroy_sw")
+        query.edit_message_text("Произошла ошибка, пожалуйста, свяжитесь с поддержкой: @ltroy_sw❌")
 
 def send_edited_response_to_review(update: Update, context: CallbackContext):
     if context.user_data.get('state') != 'editing_response':
