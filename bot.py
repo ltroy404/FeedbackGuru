@@ -1,6 +1,4 @@
-import logging
 from telegram import Update
-import socket
 from telegram.ext import Updater, CommandHandler, MessageHandler, CallbackContext, Filters
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import CommandHandler, CallbackQueryHandler
@@ -27,8 +25,6 @@ def create_table_if_not_exists():
     conn.commit()
     conn.close()
 
-create_table_if_not_exists() 
-
 def add_api_key(update: Update, context: CallbackContext):
     user_id = update.message.from_user.id
     api_key = update.message.text
@@ -39,7 +35,6 @@ def add_api_key(update: Update, context: CallbackContext):
 
     context.user_data['api_key'] = api_key
     context.user_data['state'] = None
-    update.message.reply_text("API ключ успешно добавлен!")
 
     conn = sqlite3.connect('users.db')
     c = conn.cursor()
@@ -57,19 +52,26 @@ def add_api_key(update: Update, context: CallbackContext):
     conn.commit()
     conn.close()
 
+    keyboard = [
+        [InlineKeyboardButton("ℹ️Главное меню", callback_data="back_to_main_menu")],
+        [InlineKeyboardButton("🔙Назад", callback_data="settings")],
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    update.message.reply_text("API ключ успешно добавлен!✅", reply_markup=reply_markup)
+
 def remove_api_key(update: Update, context: CallbackContext):
     user_id = update.callback_query.from_user.id
+    with sqlite3.connect('users.db') as conn:
+        cur = conn.cursor()
+        cur.execute(f"DELETE FROM api_keys WHERE user_id = {user_id}")
+        conn.commit()
     
-    conn = sqlite3.connect('users.db')
-    c = conn.cursor()
-    
-    # Удаляем API ключ пользователя
-    c.execute("UPDATE users SET api_key = NULL WHERE user_id = ?", (user_id,))
-    
-    conn.commit()
-    conn.close()
-    
-    update.callback_query.message.reply_text('API ключ успешно удален!')
+    keyboard = [
+        [InlineKeyboardButton("ℹ️Главное меню", callback_data="back_to_main_menu")],
+        [InlineKeyboardButton("🔙Назад", callback_data="settings")],
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    update.callback_query.edit_message_text(text="API ключ успешно удален!✅", reply_markup=reply_markup)
 
 def get_api_key(user_id):
     conn = sqlite3.connect('users.db')
@@ -124,16 +126,22 @@ def send_response_to_review(api_key, review_id, response_text):
 def start(update: Update, context: CallbackContext):
     try:
         keyboard = [
-            [InlineKeyboardButton("Настройки", callback_data="settings")],
-            [InlineKeyboardButton("Неотвеченные отзывы", callback_data='unanswered_feedbacks')],
+            [InlineKeyboardButton("⚙Настройки", callback_data="settings")],
+            [InlineKeyboardButton("📊Неотвеченные отзывы", callback_data='unanswered_feedbacks')],
         ]
 
         reply_markup = InlineKeyboardMarkup(keyboard)
 
-        update.message.reply_text('Привет! Я бот проекта FeedBackGuru. Выберите действие:', reply_markup=reply_markup)
+        if update.callback_query:
+            update.callback_query.edit_message_text('Привет! Я бот проекта FeedBackGuru. Выберите действие:', reply_markup=reply_markup)
+        else:
+            update.message.reply_text('Привет! Я бот проекта FeedBackGuru. Выберите действие:', reply_markup=reply_markup)
     except Exception as e:
         print(f"Ошибка: {str(e)}, свяжитесь с поддержкой: @ltroy_sw")
-        update.message.reply_text("Произошла ошибка, пожалуйста, свяжитесь с поддержкой: @ltroy_sw")
+        if update.callback_query:
+            update.callback_query.edit_message_text("Произошла ошибка, пожалуйста, свяжитесь с поддержкой: @ltroy_sw❌")
+        else:
+            update.message.reply_text("Произошла ошибка, пожалуйста, свяжитесь с поддержкой: @ltroy_sw❌")
 
 def send_message_to_server(prompt):
     try:
@@ -158,20 +166,29 @@ def button_callback(update, context):
 
         if query.data == 'settings':
             keyboard = [
-                [InlineKeyboardButton("Добавить API Wildberries", callback_data="add_wildberries_api_key")],
-                [InlineKeyboardButton("Удалить API Wildberries", callback_data="remove_api_key")],  # Добавьте эту строку
+                [InlineKeyboardButton("🔐Добавить API Wildberries", callback_data="add_wildberries_api_key")],
+                [InlineKeyboardButton("🗑Удалить API Wildberries", callback_data="remove_api_key")],
+                [InlineKeyboardButton("ℹ️Главное меню", callback_data="back_to_main_menu")],
             ]
             reply_markup = InlineKeyboardMarkup(keyboard)
-            query.edit_message_text(text="Настройки:", reply_markup=reply_markup)
+            query.edit_message_text(text="⚙Настройки:", reply_markup=reply_markup)
 
         elif query.data == 'remove_api_key':
             remove_api_key(update, context)
-            query.edit_message_text(text="API ключ успешно удален!")
+            query.edit_message_text(text="API ключ успешно удален!✅")
 
+        elif query.data == 'back_to_main_menu':
+            start(update, context)
 
         if query.data == 'add_wildberries_api_key':
             context.user_data['state'] = 'adding_api_key'
-            query.edit_message_text(text="Отправьте свой ключ Wildberries")
+            keyboard = [
+                [InlineKeyboardButton("ℹ️Главное меню", callback_data="back_to_main_menu")],
+                [InlineKeyboardButton("🔙Назад", callback_data="settings")],
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            query.edit_message_text(text="Отправьте свой ключ Wildberries", reply_markup=reply_markup)
+
 
         if query.data == 'unanswered_feedbacks':
             feedbacks = get_unanswered_feedbacks(context, context.user_data.get('api_key'))
@@ -179,22 +196,30 @@ def button_callback(update, context):
                 if feedbacks["data"]["feedbacks"]:
                     for feedback in feedbacks["data"]["feedbacks"]:
                         context.user_data['feedback_text'] = feedback["text"]
-                        keyboard = [[InlineKeyboardButton("Сгенерировать ответ", callback_data=f'generate_response:{feedback["id"]}')]]
+                        keyboard = [
+                            [InlineKeyboardButton("📝Сгенерировать ответ", callback_data=f'generate_response:{feedback["id"]}'),
+                            InlineKeyboardButton("✏️Ответить вручную", callback_data=f'manually_answer:{feedback["id"]}'),
+                            InlineKeyboardButton("ℹ️Главное меню", callback_data="back_to_main_menu")]
+                        ]
                         reply_markup = InlineKeyboardMarkup(keyboard)
                         update.callback_query.message.reply_text(feedback["text"], reply_markup=reply_markup)
+
                 else:
-                    update.callback_query.message.reply_text("Нет неотвеченных отзывов")
+                    update.callback_query.message.reply_text("Нет неотвеченных отзывов🔊")
             else:
-                query.edit_message_text(text=feedbacks.get("message"))
+                query.edit_message_text(text=feedbacks.get("message") + "❌")
 
         elif query.data.startswith('generate_response:'):
             feedback_id = query.data.split(':')[1]
             prompt = context.user_data.get('feedback_text')
             generated_response = send_message_to_server(prompt)
             keyboard = [
-                [InlineKeyboardButton("Опубликовать ответ", callback_data=f'publish_response:{feedback_id}')],
-                [InlineKeyboardButton("Исправить и опубликовать", callback_data=f'correct_and_publish_response:{feedback_id}')],
+                [InlineKeyboardButton("✅Опубликовать ответ", callback_data=f'publish_response:{feedback_id}')],
+                [InlineKeyboardButton("✉️Исправить и опубликовать", callback_data=f'correct_and_publish_response:{feedback_id}')],
+                [InlineKeyboardButton("ℹ️Главное меню", callback_data="back_to_main_menu")],
+                [InlineKeyboardButton("🔙Назад", callback_data=f'unanswered_feedbacks')],
             ]
+
             reply_markup = InlineKeyboardMarkup(keyboard)
             query.edit_message_text(text=generated_response, reply_markup=reply_markup)
 
@@ -205,15 +230,47 @@ def button_callback(update, context):
             result = send_response_to_review(api_key, feedback_id, response_text)
 
             if result.get("error"):
-                query.edit_message_text(text=f"Ошибка при отправке ответа: {result.get('message')}")
+                query.edit_message_text(text=f"Ошибка при отправке ответа: {result.get('message')}❌")
             else:
-                query.edit_message_text(text="Ответ опубликован")
+                keyboard = [
+                    [InlineKeyboardButton("ℹ️Главное меню", callback_data="back_to_main_menu")],
+                ]
+                query.edit_message_text(text="Ответ опубликован✅", reply_markup=reply_markup)
 
         elif query.data.startswith('correct_and_publish_response:'):
             feedback_id = query.data.split(':')[1]
             context.user_data['current_feedback_id'] = feedback_id
-            context.user_data['state'] = 'editing_response'
-            query.edit_message_text(text="Пожалуйста, внесите изменения в сгенерированный ответ и отправьте его обратно.")
+            context.user_data['state'] = 'correcting_response'
+            keyboard = [
+                [InlineKeyboardButton("ℹ️Главное меню", callback_data="back_to_main_menu")],
+                [InlineKeyboardButton("🔙Назад", callback_data=f'generate_response:{feedback_id}')],
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            query.edit_message_text(text="Введите исправленный ответ", reply_markup=reply_markup)
+
+        elif query.data == 'back_to_feedbacks':
+            feedbacks = get_unanswered_feedbacks(context, context.user_data.get('api_key'))
+            if feedbacks and not feedbacks.get("error"):
+                if feedbacks["data"]["feedbacks"]:
+                    for feedback in feedbacks["data"]["feedbacks"]:
+                        context.user_data['feedback_text'] = feedback["text"]
+                        keyboard = [[InlineKeyboardButton("📝Сгенерировать ответ", callback_data=f'generate_response:{feedback["id"]}')]]
+                        reply_markup = InlineKeyboardMarkup(keyboard)
+                        update.callback_query.message.reply_text(feedback["text"], reply_markup=reply_markup)
+                else:
+                    update.callback_query.message.reply_text("Нет неотвеченных отзывов🔊")
+            else:
+                query.edit_message_text(text=feedbacks.get("message") + "❌")
+        elif query.data.startswith('manually_answer:'):
+            feedback_id = query.data.split(':')[1]
+            context.user_data['current_feedback_id'] = feedback_id
+            context.user_data['state'] = 'manually_answering'
+            keyboard = [
+                [InlineKeyboardButton("ℹ️Главное меню", callback_data="back_to_main_menu")],
+                [InlineKeyboardButton("🔙Назад", callback_data=f'unanswered_feedbacks')],
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            query.edit_message_text(text="Пришлите ответ на отзыв", reply_markup=reply_markup)
 
     except Exception as e:
         print(f"Ошибка: {str(e)}, свяжитесь с поддержкой: @ltroy_sw")
@@ -238,10 +295,14 @@ def send_edited_response_to_review(update: Update, context: CallbackContext):
 def handle_unexpected_text(update: Update, context: CallbackContext):
     if context.user_data.get('state') == 'editing_response':
         send_edited_response_to_review(update, context)
+    if context.user_data.get('state') == 'manually_answering':
+        send_edited_response_to_review(update, context)
     else:
         update.message.reply_text("Пожалуйста, нажмите на соответствующую функцию, чтобы клиент обработал сообщение. Если возникла проблема или по любым вопросам пишите в поддержку: @ltroy_sw")
 
 def main():
+    create_table_if_not_exists() 
+    
     updater = Updater(TOKEN, use_context=True)
 
     dp = updater.dispatcher
