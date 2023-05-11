@@ -175,7 +175,12 @@ def button_callback(update, context):
 
         elif query.data == 'remove_api_key':
             remove_api_key(update, context)
-            query.edit_message_text(text="API ключ успешно удален!✅")
+            keyboard = [  
+                    [InlineKeyboardButton("🔐Добавить API Wildberries", callback_data="add_wildberries_api_key")],
+                    [InlineKeyboardButton("ℹ️Главное меню", callback_data="back_to_main_menu")],
+                ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            query.edit_message_text(text="API ключ успешно удален!✅", reply_markup=reply_markup)
 
         elif query.data == 'back_to_main_menu':
             start(update, context)
@@ -207,7 +212,12 @@ def button_callback(update, context):
                 else:
                     update.callback_query.message.reply_text("Нет неотвеченных отзывов🔊")
             else:
-                query.edit_message_text(text=feedbacks.get("message") + "❌")
+                keyboard = [
+                    [InlineKeyboardButton("🔐Добавить API Wildberries", callback_data="add_wildberries_api_key")],
+                    [InlineKeyboardButton("ℹ️Главное меню", callback_data="back_to_main_menu")],
+                ]
+                reply_markup = InlineKeyboardMarkup(keyboard)
+                query.edit_message_text(text=feedbacks.get("message") + "❌", reply_markup=reply_markup)
 
         elif query.data.startswith('generate_response:'):
             feedback_id = query.data.split(':')[1]
