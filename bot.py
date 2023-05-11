@@ -5,24 +5,87 @@ from telegram.ext import Updater, CommandHandler, MessageHandler, CallbackContex
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import CommandHandler, CallbackQueryHandler
 import requests
+import sqlite3
+
 
 API_SERVER_URL = "http://localhost:12345"
 TOKEN = "6194979947:AAGcZCLLZ-UB96dzxwBywAH3aAaPTEsaB5k"
 
+
+def create_table_if_not_exists():
+    conn = sqlite3.connect('users.db')
+    c = conn.cursor()
+
+    # Создание таблицы
+    c.execute('''
+    CREATE TABLE IF NOT EXISTS users
+    (user_id INTEGER PRIMARY KEY,
+    api_key TEXT);
+    ''')
+
+
+    conn.commit()
+    conn.close()
+
+create_table_if_not_exists() 
+
 def add_api_key(update: Update, context: CallbackContext):
+    user_id = update.message.from_user.id
+    api_key = update.message.text
+
     if context.user_data.get('state') != 'adding_api_key':
         handle_unexpected_text(update, context)
         return
 
-    api_key = update.message.text
     context.user_data['api_key'] = api_key
     context.user_data['state'] = None
     update.message.reply_text("API ключ успешно добавлен!")
 
+    conn = sqlite3.connect('users.db')
+    c = conn.cursor()
 
-def print_unanswered_feedbacks(context):
+    # Проверяем, существует ли уже пользователь в базе данных
+    c.execute("SELECT * FROM users WHERE user_id=?", (user_id,))
+    data = c.fetchone()
+
+    # Если пользователь существует, обновляем его API ключ. В противном случае, добавляем нового пользователя.
+    if data is None:
+        c.execute("INSERT INTO users VALUES (?,?)", (user_id, api_key))
+    else:
+        c.execute("UPDATE users SET api_key = ? WHERE user_id = ?", (api_key, user_id))
+
+    conn.commit()
+    conn.close()
+
+def remove_api_key(update: Update, context: CallbackContext):
+    user_id = update.callback_query.from_user.id
+    
+    conn = sqlite3.connect('users.db')
+    c = conn.cursor()
+    
+    # Удаляем API ключ пользователя
+    c.execute("UPDATE users SET api_key = NULL WHERE user_id = ?", (user_id,))
+    
+    conn.commit()
+    conn.close()
+    
+    update.callback_query.message.reply_text('API ключ успешно удален!')
+
+def get_api_key(user_id):
+    conn = sqlite3.connect('users.db')
+    c = conn.cursor()
+
+    # Получение API ключа пользователя
+    c.execute("SELECT api_key FROM users WHERE user_id=?", (user_id,))
+    api_key = c.fetchone()  # Извлечение API ключа из результата запроса
+    conn.close()
+    return api_key[0] if api_key else None
+
+def print_unanswered_feedbacks(user_id, context):
     try:
-        feedbacks = get_unanswered_feedbacks(context)
+    
+        api_key = get_api_key(user_id)
+        feedbacks = get_unanswered_feedbacks(context, api_key)
 
         if feedbacks and not feedbacks.get("error"):
             print("Неотвеченные отзывы:")
@@ -33,10 +96,8 @@ def print_unanswered_feedbacks(context):
     except Exception as e:
         print(f"Ошибка: {str(e)}, свяжитесь с поддержкой: @ltroy_sw")
 
-
-def get_unanswered_feedbacks(context, take=10, skip=0):
+def get_unanswered_feedbacks(context, api_key, take=10, skip=0):
     try:
-        api_key = context.user_data.get('api_key')
         if not api_key:
             return {"error": True, "message": "Отсутствует API для запроса отзывов. Пожалуйста, добавьте ключ."}
         headers = {"Authorization": f"Bearer {api_key}"}
@@ -47,7 +108,6 @@ def get_unanswered_feedbacks(context, take=10, skip=0):
             return {"error": True, "message": f"Error fetching data from server. Status code: {response.status_code}, Response: {response.text}"}
     except requests.exceptions.RequestException as e:
         return {"error": True, "message": f"Ошибка: {str(e)}, свяжитесь с поддержкой: @ltroy_sw"}
-
 
 def send_response_to_review(api_key, review_id, response_text):
     try:
@@ -60,7 +120,6 @@ def send_response_to_review(api_key, review_id, response_text):
             return {"error": True, "message": f"Ошибка отправки ответа на сервер. Пожалуйста, свяжитесь с поддержкой: @ltroy_sw Status code: {response.status_code}, Response: {response.text}"}
     except Exception as e:
         return {"error": True, "message": f"Ошибка: {str(e)}, свяжитесь с поддержкой: @ltroy_sw"}
-
 
 def start(update: Update, context: CallbackContext):
     try:
@@ -75,8 +134,6 @@ def start(update: Update, context: CallbackContext):
     except Exception as e:
         print(f"Ошибка: {str(e)}, свяжитесь с поддержкой: @ltroy_sw")
         update.message.reply_text("Произошла ошибка, пожалуйста, свяжитесь с поддержкой: @ltroy_sw")
-
-
 
 def send_message_to_server(prompt):
     try:
@@ -94,22 +151,30 @@ def button_callback(update, context):
     try:
         query = update.callback_query
         query.answer()
+        user_id = query.from_user.id
+        context.user_data['api_key'] = get_api_key(user_id)
 
         keyboard = []
 
         if query.data == 'settings':
             keyboard = [
                 [InlineKeyboardButton("Добавить API Wildberries", callback_data="add_wildberries_api_key")],
+                [InlineKeyboardButton("Удалить API Wildberries", callback_data="remove_api_key")],  # Добавьте эту строку
             ]
             reply_markup = InlineKeyboardMarkup(keyboard)
             query.edit_message_text(text="Настройки:", reply_markup=reply_markup)
+
+        elif query.data == 'remove_api_key':
+            remove_api_key(update, context)
+            query.edit_message_text(text="API ключ успешно удален!")
+
 
         if query.data == 'add_wildberries_api_key':
             context.user_data['state'] = 'adding_api_key'
             query.edit_message_text(text="Отправьте свой ключ Wildberries")
 
         if query.data == 'unanswered_feedbacks':
-            feedbacks = get_unanswered_feedbacks(context)
+            feedbacks = get_unanswered_feedbacks(context, context.user_data.get('api_key'))
             if feedbacks and not feedbacks.get("error"):
                 if feedbacks["data"]["feedbacks"]:
                     for feedback in feedbacks["data"]["feedbacks"]:
@@ -144,7 +209,6 @@ def button_callback(update, context):
             else:
                 query.edit_message_text(text="Ответ опубликован")
 
-
         elif query.data.startswith('correct_and_publish_response:'):
             feedback_id = query.data.split(':')[1]
             context.user_data['current_feedback_id'] = feedback_id
@@ -155,7 +219,6 @@ def button_callback(update, context):
         print(f"Ошибка: {str(e)}, свяжитесь с поддержкой: @ltroy_sw")
         query.edit_message_text("Произошла ошибка, пожалуйста, свяжитесь с поддержкой: @ltroy_sw")
 
-
 def send_edited_response_to_review(update: Update, context: CallbackContext):
     if context.user_data.get('state') != 'editing_response':
         handle_unexpected_text(update, context)
@@ -163,7 +226,7 @@ def send_edited_response_to_review(update: Update, context: CallbackContext):
 
     edited_response = update.message.text
     feedback_id = context.user_data.get('current_feedback_id')
-    api_key = context.user_data.get('api_key')
+    api_key = get_api_key(update.message.from_user.id)  # Получение API ключа
     result = send_response_to_review(api_key, feedback_id, edited_response)
 
     if result.get("error"):
@@ -178,7 +241,6 @@ def handle_unexpected_text(update: Update, context: CallbackContext):
     else:
         update.message.reply_text("Пожалуйста, нажмите на соответствующую функцию, чтобы клиент обработал сообщение. Если возникла проблема или по любым вопросам пишите в поддержку: @ltroy_sw")
 
-
 def main():
     updater = Updater(TOKEN, use_context=True)
 
@@ -189,6 +251,7 @@ def main():
     dp.add_handler(MessageHandler(Filters.text & Filters.chat_type.private & ~Filters.command & Filters.update.message, add_api_key))
     dp.add_handler(MessageHandler(Filters.text & Filters.chat_type.private & ~Filters.command & Filters.update.edited_message, handle_unexpected_text))
     dp.add_handler(MessageHandler(Filters.text & ~Filters.command, handle_unexpected_text))
+    dp.add_handler(CallbackQueryHandler(remove_api_key, pattern='^remove_api$'))
 
     updater.start_polling()
     updater.idle()

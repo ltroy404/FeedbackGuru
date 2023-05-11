@@ -33,8 +33,6 @@ def get_unanswered_feedbacks():
         print(f"Ошибка: {str(e)}, свяжитесь с поддержкой: @ltroy_sw")
         return jsonify({"error": True, "message": "Произошла ошибка, пожалуйста, свяжитесь с поддержкой: @ltroy_sw"}), 500
 
-
-
 def reply_to_review(api_key, review_id, reply_text):
     url = "https://feedbacks-api.wildberries.ru/api/v1/feedbacks"
     headers = {
