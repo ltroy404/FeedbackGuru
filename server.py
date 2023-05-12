@@ -10,6 +10,7 @@ CORS(app)
 WB_API_URL = "https://feedbacks-api.wildberries.ru"
 openai.api_key = "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"
 
+
 @app.route("/api/v1/feedbacks/unanswered", methods=["GET"])
 def get_unanswered_feedbacks():
     try:
@@ -53,7 +54,6 @@ def reply_to_review(api_key, review_id, reply_text):
         print(f"Ошибка при отправке ответа на отзыв: {response.status_code}, пожалуйста, свяжитесь с поддержкой: @ltroy_sw")
         return None
 
-
 @app.route("/api/v1/generate_response", methods=["POST"])
 def generate_response():
     prompt = request.json.get("prompt")
@@ -62,7 +62,6 @@ def generate_response():
 
     response = generate_gpt3_response(prompt)
     return jsonify({"response": response})
-
 
 def generate_gpt3_response(prompt):
     content = f"Ответь на отзыв клиента: {prompt}"
@@ -85,7 +84,6 @@ def generate_gpt3_response(prompt):
 
     return response.choices[0].message['content'].strip()
 
-
 @app.route("/api/v1/feedbacks/<review_id>/reply", methods=["POST"])
 def post_feedback_reply(review_id):
     api_key = request.headers.get("Authorization")
@@ -102,8 +100,6 @@ def post_feedback_reply(review_id):
         return jsonify({"message": "Reply sent successfully"})
     else:
         return jsonify({"error": True, "message": "Error sending reply to review"}), 500
-
-
 
 def main():
     app.run(host="localhost", port=12345, threaded=True)
