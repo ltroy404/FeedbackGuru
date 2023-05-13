@@ -13,7 +13,7 @@ openai.api_key = "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"
 
 
 #БЛОК РАБОТЫ С БД
-def create_table_if_not_exists():#создание БД
+def create_table_if_not_exists():#создаёт БД
     conn = sqlite3.connect('users.db')
     c = conn.cursor()
 
@@ -21,14 +21,48 @@ def create_table_if_not_exists():#создание БД
     c.execute('''
     CREATE TABLE IF NOT EXISTS users
     (user_id INTEGER PRIMARY KEY,
-    api_key TEXT);
+    api_key TEXT,
+    access INTEGER DEFAULT 0);  
     ''')
-
 
     conn.commit()
     conn.close()
 
-def get_api_key(user_id: int):#копирует API WB из БД
+def check_access(user_id):#проверяет доступ
+    conn = sqlite3.connect('users.db')
+    c = conn.cursor()
+
+    # Запрос на получение значения 'access' для данного user_id
+    c.execute("SELECT access FROM users WHERE user_id = ?", (user_id,))
+
+    result = c.fetchone()  # Получение результата запроса
+    conn.close()
+
+    if result is None:
+        return False  # Если результат None, значит, такого пользователя нет в базе данных
+
+    return bool(result[0])  # Преобразуем результат в bool и возвращаем
+
+
+def give_access(user_id: int):  # предоставляет пользователю доступ
+    conn = sqlite3.connect('users.db')
+    c = conn.cursor()
+
+    # Обновление статуса доступа на True
+    c.execute("UPDATE users SET access = 1 WHERE user_id=?", (user_id,))
+    conn.commit()
+    conn.close()
+
+def revoke_access(user_id: int):  # отзывает доступ у пользователя
+    conn = sqlite3.connect('users.db')
+    c = conn.cursor()
+
+    # Обновление статуса доступа на False
+    c.execute("UPDATE users SET access = 0 WHERE user_id=?", (user_id,))
+    conn.commit()
+    conn.close()
+
+def get_api_key(user_id: int):  # извлекает API WB из БД
     conn = sqlite3.connect('users.db')
     c = conn.cursor()
 
@@ -61,11 +95,11 @@ def add_api_key(user_id: int, api_key: str):#добавляет API WB в БД
     c.execute("SELECT * FROM users WHERE user_id=?", (user_id,))
     data = c.fetchone()
     if data is None:
-        c.execute("INSERT INTO users VALUES (?,?)", (user_id, api_key))
-        print(f'API-ключ {api_key} добавлен в базу данных для пользователя {user_id}')
+        c.execute("INSERT INTO users (user_id, api_key, access) VALUES (?,?,?)", (user_id, api_key, False))
+        print(f'API-ключ {api_key} добавлен в базу данных для пользователя {user_id} с доступом по умолчанию (False)')
     else:
-        c.execute("UPDATE users SET api_key=? WHERE user_id=?", (api_key, user_id))
-        print(f'API-ключ {api_key} обновлен в базе данных для пользователя {user_id}')
+        c.execute("UPDATE users SET api_key=?, access=? WHERE user_id=?", (api_key, False, user_id))
+        print(f'API-ключ {api_key} обновлен в базе данных для пользователя {user_id} и доступ установлен в False')
 
     conn.commit()
     conn.close()
@@ -119,6 +153,10 @@ def get_unanswered_feedbacks():  # Обрабатывает запрос на п
         if not api_key:
             return jsonify({"error": True, "message": "API-ключ не найден для данного user_id"}), 400
 
+        # Проверяем доступ пользователя
+        if not check_access(user_id):
+            return jsonify({"error": True, "message": "У пользователя нет доступа"}), 403
+
         take = request.args.get("take", 10)
         skip = request.args.get("skip", 0)
 
@@ -127,11 +165,9 @@ def get_unanswered_feedbacks():  # Обрабатывает запрос на п
             return jsonify(response)
         else:
             return jsonify({"error": True, "message": "Error fetching data from Wildberries API"}), 500
-
     except Exception as e:
-        print(f"Ошибка: {str(e)}, свяжитесь с поддержкой: @ltroy_sw")
-        return jsonify({"error": True, "message": "Произошла ошибка, пожалуйста, свяжитесь с поддержкой: @ltroy_sw"}), 500
-
+        print(f"Ошибка: {str(e)}")
+        return jsonify({"error": True, "message": "Произошла ошибка, пожалуйста, свяжитесь с поддержкой"}), 500
 
 def fetch_unanswered_feedbacks(api_key, take, skip):  # Получает непроверенные отзывы с использованием API WB и возвращает результат.
     headers = {"Authorization": api_key, "accept": "application/json"}
@@ -153,6 +189,10 @@ def post_feedback_reply(review_id):#Обрабатывает запрос на �
     api_key = get_api_key(user_id)  # Извлечение API-ключа из базы данных
     if not api_key:
         return jsonify({"error": True, "message": "API-ключ не найден для данного user_id"}), 400
+
+    # Проверяем доступ пользователя
+    if not check_access(user_id):
+        return jsonify({"error": True, "message": "У пользователя нет доступа"}), 403
 
     response_text = request.json.get("response")
     if not response_text:
@@ -220,6 +260,7 @@ def generate_gpt3_response(prompt):#генерирует ответ на отз�
 #ОСТАЛЬНОЕ
 def main():#проверяет таблицу и запускает сервер
     create_table_if_not_exists()
+    give_access(490559205)
     app.run(host="localhost", port=12345, threaded=True)
 
 if __name__ == "__main__":#запускает сервер
