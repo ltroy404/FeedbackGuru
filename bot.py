@@ -7,88 +7,55 @@ import sqlite3
 
 
 API_SERVER_URL = "http://localhost:12345"
-TOKEN = "6194979947:AAGcZCLLZ-UB96dzxwBywAH3aAaPTEsaB5k"
+TOKEN = "6194979947:AAEAzlIdQd9w_2abq7ixFBk7o3s1kiw8p9Q"
 
-
-def create_table_if_not_exists():
-    conn = sqlite3.connect('users.db')
-    c = conn.cursor()
-
-    # Создание таблицы
-    c.execute('''
-    CREATE TABLE IF NOT EXISTS users
-    (user_id INTEGER PRIMARY KEY,
-    api_key TEXT);
-    ''')
-
-
-    conn.commit()
-    conn.close()
 
 def add_api_key(update: Update, context: CallbackContext):
-    user_id = update.message.from_user.id
-    api_key = update.message.text
+    try:
+        api_key = update.message.text
+        user_id = update.message.chat_id
 
-    if context.user_data.get('state') != 'adding_api_key':
-        handle_unexpected_text(update, context)
-        return
+        response = requests.post(f"{API_SERVER_URL}/api/v1/add_api_key", json={"api_key": api_key, "user_id": user_id})
 
-    context.user_data['api_key'] = api_key
-    context.user_data['state'] = None
-
-    conn = sqlite3.connect('users.db')
-    c = conn.cursor()
-
-    # Проверяем, существует ли уже пользователь в базе данных
-    c.execute("SELECT * FROM users WHERE user_id=?", (user_id,))
-    data = c.fetchone()
-
-    # Если пользователь существует, обновляем его API ключ. В противном случае, добавляем нового пользователя.
-    if data is None:
-        c.execute("INSERT INTO users VALUES (?,?)", (user_id, api_key))
-    else:
-        c.execute("UPDATE users SET api_key = ? WHERE user_id = ?", (api_key, user_id))
-
-    conn.commit()
-    conn.close()
-
-    keyboard = [
-        [InlineKeyboardButton("ℹ️Главное меню", callback_data="back_to_main_menu")],
-        [InlineKeyboardButton("🔙Назад", callback_data="settings")],
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    update.message.reply_text("API ключ успешно добавлен!✅", reply_markup=reply_markup)
+        if response.status_code == 200:
+            keyboard = [
+            [InlineKeyboardButton("ℹ️Главное меню", callback_data="back_to_main_menu")],
+            [InlineKeyboardButton("🔙Назад", callback_data="settings")],
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            update.message.reply_text("API ключ успешно добавлен!✅", reply_markup=reply_markup)
+    except Exception as e:
+        keyboard = [
+            [InlineKeyboardButton("ℹ️Главное меню", callback_data="back_to_main_menu")],
+            [InlineKeyboardButton("🔙Назад", callback_data="settings")],
+            ]
+        update.message.reply_text (f"Ошибка: {str(e)}, свяжитесь с поддержкой: @ltroy_sw", reply_markup=reply_markup)
 
 def remove_api_key(update: Update, context: CallbackContext):
-    user_id = update.callback_query.from_user.id
-    with sqlite3.connect('users.db') as conn:
-        cur = conn.cursor()
-        cur.execute(f"DELETE FROM users WHERE user_id = {user_id}")
-        conn.commit()
-    
-    keyboard = [
-        [InlineKeyboardButton("ℹ️Главное меню", callback_data="back_to_main_menu")],
-        [InlineKeyboardButton("🔙Назад", callback_data="settings")],
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    update.callback_query.edit_message_text(text="API ключ успешно удален!✅", reply_markup=reply_markup)
+    try:
+        user_id = update.callback_query.from_user.id
 
-def get_api_key(user_id):
-    conn = sqlite3.connect('users.db')
-    c = conn.cursor()
+        # Запрос к серверу для удаления API-ключа
+        response = requests.post(f"{API_SERVER_URL}/api/v1/remove_api_key", json={"user_id": user_id})
 
-    # Получение API ключа пользователя
-    c.execute("SELECT api_key FROM users WHERE user_id=?", (user_id,))
-    api_key = c.fetchone()  # Извлечение API ключа из результата запроса
-    conn.close()
-    return api_key[0] if api_key else None
+        keyboard = [
+            [InlineKeyboardButton("ℹ️Главное меню", callback_data="back_to_main_menu")],
+            [InlineKeyboardButton("🔙Назад", callback_data="settings")],
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        # Если запрос был успешным
+        if response.status_code == 200:
+            update.callback_query.edit_message_text(text="API ключ успешно удален!✅", reply_markup=reply_markup)
+        else:
+            update.callback_query.edit_message_text(text="Произошла ошибка при удалении API-ключа.", reply_markup=reply_markup)
+
+    except Exception as e:
+        update.callback_query.edit_message_text (f"Ошибка: {str(e)}, свяжитесь с поддержкой: @ltroy_sw", reply_markup=reply_markup)
 
 def print_unanswered_feedbacks(user_id, context):
     try:
-    
-        api_key = get_api_key(user_id)
-        feedbacks = get_unanswered_feedbacks(context, api_key)
-
+        feedbacks = get_unanswered_feedbacks(context, user_id)
         if feedbacks and not feedbacks.get("error"):
             print("Неотвеченные отзывы:")
             for feedback in feedbacks["data"]["feedbacks"]:
@@ -98,11 +65,9 @@ def print_unanswered_feedbacks(user_id, context):
     except Exception as e:
         print(f"Ошибка: {str(e)}, свяжитесь с поддержкой: @ltroy_sw")
 
-def get_unanswered_feedbacks(context, api_key, take=10, skip=0):
+def get_unanswered_feedbacks(context, user_id, take=10, skip=0):
     try:
-        if not api_key:
-            return {"error": True, "message": "Отсутствует API для запроса отзывов. Пожалуйста, добавьте ключ."}
-        headers = {"Authorization": f"Bearer {api_key}"}
+        headers = {"user_id": str(user_id)}
         response = requests.get(f"{API_SERVER_URL}/api/v1/feedbacks/unanswered", params={"take": take, "skip": skip}, headers=headers)
         if response.status_code == 200:
             return response.json()
@@ -111,9 +76,9 @@ def get_unanswered_feedbacks(context, api_key, take=10, skip=0):
     except requests.exceptions.RequestException as e:
         return {"error": True, "message": f"Ошибка: {str(e)}, свяжитесь с поддержкой: @ltroy_sw"}
 
-def send_response_to_review(api_key, review_id, response_text):
+def send_response_to_review(user_id, review_id, response_text):
     try:
-        headers = {"Authorization": f"Bearer {api_key}"}
+        headers = {"user_id": str(user_id)}
         response = requests.post(f"{API_SERVER_URL}/api/v1/feedbacks/{review_id}/reply", json={"response": response_text}, headers=headers)
 
         if response.status_code == 200:
@@ -160,7 +125,6 @@ def button_callback(update, context):
         query = update.callback_query
         query.answer()
         user_id = query.from_user.id
-        context.user_data['api_key'] = get_api_key(user_id)
 
         keyboard = []
 
@@ -196,7 +160,7 @@ def button_callback(update, context):
 
 
         if query.data == 'unanswered_feedbacks':
-            feedbacks = get_unanswered_feedbacks(context, context.user_data.get('api_key'))
+            feedbacks = get_unanswered_feedbacks(context, user_id)
             if feedbacks and not feedbacks.get("error"):
                 if feedbacks["data"]["feedbacks"]:
                     for feedback in feedbacks["data"]["feedbacks"]:
@@ -240,8 +204,8 @@ def button_callback(update, context):
         elif query.data.startswith('publish_response:'):
             feedback_id = query.data.split(':')[1]
             response_text = query.message.text
-            api_key = context.user_data.get('api_key')
-            result = send_response_to_review(api_key, feedback_id, response_text)
+            result = send_response_to_review(user_id, feedback_id, response_text)
+
 
             if result.get("error"):
                 keyboard = [
@@ -269,7 +233,7 @@ def button_callback(update, context):
             query.edit_message_text(text="Введите исправленный ответ", reply_markup=reply_markup)
 
         elif query.data == 'back_to_feedbacks':
-            feedbacks = get_unanswered_feedbacks(context, context.user_data.get('api_key'))
+            feedbacks = get_unanswered_feedbacks(context, user_id)
             if feedbacks and not feedbacks.get("error"):
                 if feedbacks["data"]["feedbacks"]:
                     for feedback in feedbacks["data"]["feedbacks"]:
@@ -316,8 +280,8 @@ def send_edited_response_to_review(update: Update, context: CallbackContext):
 
     edited_response = update.message.text
     feedback_id = context.user_data.get('current_feedback_id')
-    api_key = get_api_key(update.message.from_user.id)  # Получение API ключа
-    result = send_response_to_review(api_key, feedback_id, edited_response)
+    user_id = str(update.message.from_user.id)  
+    result = send_response_to_review(user_id, feedback_id, edited_response)
 
     if result.get("error"):
         update.message.reply_text(f"Ошибка при отправке исправленного ответа: {result.get('message')}")
@@ -338,8 +302,6 @@ def handle_unexpected_text(update: Update, context: CallbackContext):
         update.message.reply_text("Пожалуйста, нажмите на соответствующую функцию, чтобы клиент обработал сообщение. Если возникла проблема или по любым вопросам пишите в поддержку: @ltroy_sw")
 
 def main():
-    create_table_if_not_exists() 
-    
     updater = Updater(TOKEN, use_context=True)
 
     dp = updater.dispatcher
