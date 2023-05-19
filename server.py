@@ -87,7 +87,7 @@ def receive_api_key():#принимает API WB и вызывает add_api_key
 
     return jsonify({"message": "API-ключ успешно получен"})
 
-def add_api_key(user_id: int, api_key: str):#добавляет API WB в БД
+def add_api_key(user_id: int, api_key: str):  # добавляет API WB в БД
     conn = sqlite3.connect('users.db')
     c = conn.cursor()
 
@@ -98,12 +98,15 @@ def add_api_key(user_id: int, api_key: str):#добавляет API WB в БД
         c.execute("INSERT INTO users (user_id, api_key, access) VALUES (?,?,?)", (user_id, api_key, False))
         print(f'API-ключ {api_key} добавлен в базу данных для пользователя {user_id} с доступом по умолчанию (False)')
     else:
-        c.execute("UPDATE users SET api_key=?, access=? WHERE user_id=?", (api_key, False, user_id))
-        print(f'API-ключ {api_key} обновлен в базе данных для пользователя {user_id} и доступ установлен в False')
+        # Получаем текущий статус доступа
+        current_access = check_access(user_id)
+        # Преобразуем булевое значение в целое число
+        current_access = 1 if current_access else 0
+        c.execute("UPDATE users SET api_key=?, access=? WHERE user_id=?", (api_key, current_access, user_id))
+        print(f'API-ключ {api_key} обновлен в базе данных для пользователя {user_id} и текущий статус доступа сохранен')
 
     conn.commit()
     conn.close()
-    print(get_api_key(user_id))
 
 @app.route("/api/v1/remove_api_key", methods=["POST"])
 def receive_user_id_for_removal():#принимает user_id и вызывает remove_api_key
@@ -115,30 +118,19 @@ def receive_user_id_for_removal():#принимает user_id и вызывае�
 
     return jsonify({"message": "API key removed successfully"})
 
-def remove_api_key(user_id: int):#удаляет API WB из БД
-    print(get_api_key(user_id))
-    conn = sqlite3.connect('users.db')
-    c = conn.cursor()
+def remove_api_key(user_id: int):  # Удаляет API WB из БД
+    current_access = check_access(user_id)  # Проверяем текущий статус доступа
+    conn = sqlite3.connect('users.db')  
+    c = conn.cursor() 
 
-    # Удаление API ключа пользователя
-    c.execute("DELETE FROM users WHERE user_id=?", (user_id,))
-    conn.commit()
-    conn.close()
-    print(get_api_key(user_id))
-
-
-    conn = sqlite3.connect('users.db')
-    c = conn.cursor()
-
-    c.execute("SELECT api_key FROM users WHERE user_id=?", (user_id,))
-    data = c.fetchone()
-
-    conn.close()
-
-    if data is not None:
-        return data[0]  # Возвращаем api_key
+    # Если доступ есть, то удаляем API ключ, но оставляем запись пользователя с его текущим статусом доступа
+    if current_access:
+        c.execute("UPDATE users SET api_key=NULL WHERE user_id=?", (user_id,))
     else:
-        return None  # Если пользователь не найден в базе данных
+        # Если доступа нет, то удаляем всю запись о пользователе
+        c.execute("DELETE FROM users WHERE user_id=?", (user_id,))
+    conn.commit() 
+    conn.close()  
 
 
 #БЛОК РАБОТЫ С WB
@@ -155,7 +147,7 @@ def get_unanswered_feedbacks():  # Обрабатывает запрос на п
 
         # Проверяем доступ пользователя
         if not check_access(user_id):
-            return jsonify({"error": True, "message": "У пользователя нет доступа"}), 403
+            return jsonify({"error": True, "message": "Где деньги, Лебовски?"}), 403
 
         take = request.args.get("take", 10)
         skip = request.args.get("skip", 0)
@@ -164,7 +156,7 @@ def get_unanswered_feedbacks():  # Обрабатывает запрос на п
         if response:
             return jsonify(response)
         else:
-            return jsonify({"error": True, "message": "Error fetching data from Wildberries API"}), 500
+            return jsonify({"error": True, "message": "Ошибка получения данных от Wildberries API"}), 500
     except Exception as e:
         print(f"Ошибка: {str(e)}")
         return jsonify({"error": True, "message": "Произошла ошибка, пожалуйста, свяжитесь с поддержкой"}), 500
@@ -260,7 +252,7 @@ def generate_gpt3_response(prompt):#генерирует ответ на отз�
 #ОСТАЛЬНОЕ
 def main():#проверяет таблицу и запускает сервер
     create_table_if_not_exists()
-    give_access(490559205)
+    give_access(1572302344)
     app.run(host="localhost", port=12345, threaded=True)
 
 if __name__ == "__main__":#запускает сервер

@@ -72,7 +72,8 @@ def get_unanswered_feedbacks(context, user_id, take=10, skip=0):
         if response.status_code == 200:
             return response.json()
         else:
-            return {"error": True, "message": f"Error fetching data from server. Status code: {response.status_code}, Response: {response.text}"}
+            error_message = response.json().get('message', 'Unknown error')
+            return {"error": True, "message": f"Ошибка получения ответа от сервера. Код ошибки: {response.status_code}, Причина: {error_message}"}
     except requests.exceptions.RequestException as e:
         return {"error": True, "message": f"Ошибка: {str(e)}, свяжитесь с поддержкой: @ltroy_sw"}
 
