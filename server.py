@@ -9,7 +9,7 @@ app = Flask(__name__)
 CORS(app)
 
 WB_API_URL = "https://feedbacks-api.wildberries.ru"
-openai.api_key = "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"
+openai.api_key = "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"
 
 
 #БЛОК РАБОТЫ С БД

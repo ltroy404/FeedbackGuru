@@ -7,7 +7,7 @@ import sqlite3
 
 
 API_SERVER_URL = "http://localhost:12345"
-TOKEN = "6194979947:AAEAzlIdQd9w_2abq7ixFBk7o3s1kiw8p9Q"
+TOKEN = "6085670827:AAE6NcoyKlz2S9zES8tZVuu2ClVyH5uzH9Q"
 
 
 def add_api_key(update: Update, context: CallbackContext):
@@ -190,7 +190,7 @@ def button_callback(update, context):
 
         elif query.data.startswith('generate_response:'):
             feedback_id = query.data.split(':')[1]
-            prompt = context.user_data.get('feedback_text')
+            prompt = update.callback_query.message.text
             generated_response = send_message_to_server(prompt)
             keyboard = [
                 [InlineKeyboardButton("✅Опубликовать ответ", callback_data=f'publish_response:{feedback_id}')],
